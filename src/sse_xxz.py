@@ -132,7 +132,7 @@ def run(bonds, N, beta, Delta=1.0, h=0.0, ntherm=500, nmeas=3000, seed_=0, nbins
     np.random.seed(seed_); seed(seed_)
     spin = np.where(np.random.random(N) < 0.5, 1, -1).astype(np.int64)
     ops = np.full(max(40, int(beta * nb * 0.3)), -1, np.int64); n = 0; nl = 10
-    acc_n = 0; acc_v = 0; acc_k = 0
+    acc_n = 0; acc_v = 0; acc_k = 0; acc_L = 0
     zflip = (h == 0.0)                                       # h = 0: global spin flip is an exact update (weights invariant)
     for t in range(ntherm):
         n, v = sweep(spin, ops, b, beta, nb, n, Cb, hb, nl, Delta)
@@ -143,15 +143,21 @@ def run(bonds, N, beta, Delta=1.0, h=0.0, ntherm=500, nmeas=3000, seed_=0, nbins
         if not adapt:
             if t > 20: nl = max(10, int(2 * n / loop_div))
             continue
-        acc_n += n; acc_v += v; acc_k += 1
-        # first half of the thermalisation: retune every 5 sweeps (fast convergence from nl = 10);
-        # second half: accumulate and retune once at the end from the whole window (loop lengths are broad-tailed)
-        if t < ntherm // 2 and (acc_k >= 5 or t < 20) or t == ntherm - 1:
-            if acc_v > 0: nl = max(1, int(round(nl * 2.0 * acc_n / acc_v)))
-            else: nl = max(1, 2 * nl)
-            acc_n = acc_v = acc_k = 0
+        acc_n += n; acc_v += v; acc_k += 1; acc_L += nl
+        # Loop lengths are broad (gapless cases: either ~10 or ~10^4 steps), so the mean loop length is estimated as
+        # (summed visits)/(summed loops) over a window of >= 50 loops or >= 20 x 2n visits, and nl may grow by at most x2
+        # per update (x4 at the final update).  First half of the thermalisation: windowed updates; second half: one window,
+        # one update at the end.  nl is frozen during the measurement.
+        last = (t == ntherm - 1)
+        if (t < ntherm // 2 and (acc_L >= 50 or acc_v >= 40 * acc_n / acc_k)) or last:
+            if acc_v > 0:
+                target = 2.0 * (acc_n / acc_k) / (acc_v / acc_L)
+                nl = max(1, int(round(min(target, (4 if last else 2) * nl))))
+            else:
+                nl = 2 * nl
+            acc_n = acc_v = acc_k = acc_L = 0
         elif t == ntherm // 2:
-            acc_n = acc_v = acc_k = 0
+            acc_n = acc_v = acc_k = acc_L = 0
     R = np.empty((nmeas, 4)); vis = 0.0; nsum = 0.0; t0 = time.time()
     for t in range(nmeas):
         n, v = sweep(spin, ops, b, beta, nb, n, Cb, hb, nl, Delta)
