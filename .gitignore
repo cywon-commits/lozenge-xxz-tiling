@@ -3,3 +3,4 @@ __pycache__/
 data/stage3/tilings_small.pkl
 *.log.tmp
 data/stage4/jobs_*.log
+data/stage4/queue.log
