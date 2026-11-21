@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 data/stage3/tilings_small.pkl
 *.log.tmp
+data/stage4/jobs_*.log
